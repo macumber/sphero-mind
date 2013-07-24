@@ -1,36 +1,65 @@
 $: << '/working/sphero/lib/'
 
-require 'serialport'
 require 'sphero'
+require 'socket'
+require 'json'
+
+ip = '127.0.0.1'
+port = 13854
+socket = TCPSocket.new(ip, port)
 
 dev = "COM5"
-
 s = Sphero.new(dev)
 s.ping
 
-puts "red"
-s.rgb(255, 0, 0)
-sleep(2)
+def send_request(socket, request)
+  request = request.to_json  + "\r"
+  socket.print(request)
+  socket.flush
+  return get_response(socket)
+end
 
-puts "green"
-s.rgb(0, 255, 0)
-sleep(2)
+def get_response(socket)
+  response = socket.gets("\r")
+  begin
+    response = JSON.parse(response)
+  rescue
+    response = Hash.new
+  end
+  return response
+end
 
-puts "blue"
-s.rgb(0, 0, 255)
-sleep(2)
+#request = Hash.new
+#request['appName'] = 'SpheroMind'
+#request['appKey'] = '8bada2ae333f9dc6ee3693e52f20852f658c204d'
+#send_request(socket, request)
 
-puts "roll slow"
-s.roll(32, 0, true)
-sleep(2)
+request = Hash.new
+request['enableRawOutput'] = false
+request['format'] = "Json"
+send_request(socket, request)
 
-puts "roll med"
-s.roll(128, 0, true)
-sleep(2)
+attention = [0, 0, 0]
 
-puts "roll fast"
-s.roll(255, 0, true)
-sleep(2)
+while response = get_response(socket)
+  eSense = response['eSense']
+  if eSense
+    attention.shift
+    attention << eSense['attention'].to_f
+    
+    min = 100.0
+    attention.each { |a| min=[min, a].min }
+    
+    red = ((255/100.0)*(min)).to_i
+    puts "#{red} = #{attention.join(',')}"
+    
+    begin
+      s.rgb(red, 0, 0)
+      s.roll(red, 0, true)
+    rescue
+    end
+  end
+end
 
-puts "stop"
-s.roll(0, 0, true)
+
+
